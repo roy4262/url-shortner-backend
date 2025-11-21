@@ -1,0 +1,28 @@
+name: Node CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x]
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Install dependencies
+        run: npm ci
+      - name: Run lint (if configured)
+        run: |
+          if [ -f package.json ] && grep -q "lint" package.json; then npm run lint || true; else echo "no lint"; fi
+      - name: Run basic smoke check
+        run: node -e "console.log('node ok')"
