@@ -107,7 +107,16 @@ app.post("/api/links", async (req, res) => {
       url,
     ]);
 
-    return res.status(201).json({ code: finalCode, url });
+    // Build absolute short URL. Prefer explicit env var SHORT_URL_BASE, then NEXT_PUBLIC_BASE_URL,
+    // otherwise derive from the incoming request host/protocol.
+    const base = (
+      process.env.SHORT_URL_BASE ||
+      process.env.NEXT_PUBLIC_BASE_URL ||
+      `${req.protocol}://${req.get("host")}`
+    ).replace(/\/$/, "");
+    const shortUrl = `${base}/${finalCode}`;
+
+    return res.status(201).json({ code: finalCode, url, shortUrl });
   } catch (err) {
     console.error("POST /api/links error", err && err.stack ? err.stack : err);
     // Handle unique violation if race created code
@@ -124,9 +133,16 @@ app.get("/api/links", async (req, res) => {
     const q = await db.query(
       "SELECT code, url, clicks, last_clicked FROM links ORDER BY created_at DESC"
     );
+    // Build base for short URLs (env override or derive from request)
+    const base = (
+      process.env.SHORT_URL_BASE ||
+      process.env.NEXT_PUBLIC_BASE_URL ||
+      `${req.protocol}://${req.get("host")}`
+    ).replace(/\/$/, "");
     const rows = q.rows.map((r) => ({
       code: r.code,
       url: r.url,
+      shortUrl: `${base}/${r.code}`,
       clicks: Number(r.clicks || 0),
       lastClicked: r.last_clicked
         ? new Date(r.last_clicked).toISOString()
@@ -149,9 +165,15 @@ app.get("/api/links/:code", async (req, res) => {
     );
     if (q.rowCount === 0) return res.status(404).json({ error: "not found" });
     const r = q.rows[0];
+    const base = (
+      process.env.SHORT_URL_BASE ||
+      process.env.NEXT_PUBLIC_BASE_URL ||
+      `${req.protocol}://${req.get("host")}`
+    ).replace(/\/$/, "");
     res.json({
       code: r.code,
       url: r.url,
+      shortUrl: `${base}/${r.code}`,
       clicks: Number(r.clicks || 0),
       lastClicked: r.last_clicked
         ? new Date(r.last_clicked).toISOString()
