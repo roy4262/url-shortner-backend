@@ -3,6 +3,10 @@ const express = require("express");
 const crypto = require("crypto");
 const db = require("./db");
 require("dotenv").config();
+const os = require("os");
+
+// record start time for uptime reporting
+const START_TIME = Date.now();
 
 const app = express();
 
@@ -44,11 +48,37 @@ app.use((req, res, next) => {
 app.use(express.json());
 
 // Helper: generate short code
+// Generate a base62 code (A-Za-z0-9). We'll retry on collisions when inserting.
+const CODE_REGEX = /^[A-Za-z0-9]{6,8}$/;
+const BASE62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
 function generateCode(len = 6) {
-  return crypto
-    .randomBytes(Math.ceil(len / 2))
-    .toString("hex")
-    .slice(0, len);
+  let out = "";
+  const bytes = crypto.randomBytes(len);
+  for (let i = 0; i < len; i++) {
+    const idx = bytes[i] % BASE62.length;
+    out += BASE62[idx];
+  }
+  return out;
+}
+
+// Generate a unique code by checking the DB; try a few times to avoid collisions.
+async function generateUniqueCode(len = 6, maxAttempts = 5) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const candidate = generateCode(len);
+    try {
+      const existing = await db.query(
+        "SELECT code FROM links WHERE code = $1",
+        [candidate]
+      );
+      if (existing.rowCount === 0) return candidate;
+    } catch (err) {
+      // If check fails, log and continue — the INSERT will also handle unique violation.
+      console.error("Error checking code uniqueness", err);
+    }
+  }
+  // As a fallback, return a generated code (caller should handle unique violation on insert)
+  return generateCode(len);
 }
 
 function isValidUrl(value) {
@@ -74,9 +104,29 @@ async function checkDb() {
 app.get("/healthz", async (req, res) => {
   const dbStatus = await checkDb();
   if (!dbStatus.ok) {
-    return res.status(500).json({ ok: false, version: "1.0", db: dbStatus });
+    return res.status(500).json({
+      ok: false,
+      version: "1.0",
+      db: dbStatus,
+      uptime_seconds: Math.floor((Date.now() - START_TIME) / 1000),
+      start_time: new Date(START_TIME).toISOString(),
+      hostname: os.hostname(),
+      platform: `${os.type()} ${os.release()}`,
+      node: process.version,
+      memory: process.memoryUsage(),
+    });
   }
-  res.json({ ok: true, version: "1.0", db: dbStatus });
+  res.json({
+    ok: true,
+    version: "1.0",
+    db: dbStatus,
+    uptime_seconds: Math.floor((Date.now() - START_TIME) / 1000),
+    start_time: new Date(START_TIME).toISOString(),
+    hostname: os.hostname(),
+    platform: `${os.type()} ${os.release()}`,
+    node: process.version,
+    memory: process.memoryUsage(),
+  });
 });
 
 // Create link
@@ -88,7 +138,16 @@ app.post("/api/links", async (req, res) => {
   }
 
   const desired = code && String(code).trim();
-  let finalCode = desired || generateCode(6);
+  // Validate custom code if provided
+  if (desired) {
+    if (!CODE_REGEX.test(desired)) {
+      return res
+        .status(400)
+        .json({ error: "invalid code format; use A-Za-z0-9, 6-8 chars" });
+    }
+  }
+
+  let finalCode = desired || (await generateUniqueCode(6));
 
   try {
     if (desired) {
