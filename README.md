@@ -47,3 +47,43 @@ If you want, I can:
 - create a recommended `render.yaml` for Render.
 - add a `Procfile` for Heroku.
 - create a small `deploy` GitHub Action that deploys to Render using its GitHub integration (requires an API key stored in Secrets).
+
+## Frontend (links & architecture)
+
+Frontend repository: https://github.com/roy4262/url-frontend
+
+Deployed frontend (demo): https://lambent-mandazi-bc4f70.netlify.app/
+
+Frontend architecture (high level):
+
+- Tech: React (Vite) + Tailwind CSS. Single-page app using React Router for client-side routes.
+- Pages:
+  - `/` (Dashboard) — list all links, create new links (with optional custom code), search/filter, copy/delete actions, responsive layout and client-side validation.
+  - `/code/:code` (Stats) — details for a single short code (clicks, last clicked, open short link button).
+  - `/healthz` — frontend health page that queries the backend `/healthz` endpoint and displays system details.
+- Components: a small shared `Button` component (primary/ghost/danger variants), and page-level components under `src/pages`.
+- Styling: Tailwind utility classes (no heavy CSS framework required). Short links are displayed as pill-shaped gradient buttons for visual clarity.
+- Env / Integration points:
+  - `VITE_API_URL` — base URL to call backend APIs (e.g., `https://bitly-self.vercel.app` or `http://localhost:4000` for local dev).
+  - `VITE_SHORT_URL_BASE` — optional override for the public short URL base that the frontend should copy/open. If unset, frontend prefers `shortUrl` returned by the backend or derives it from `window.location.origin`.
+
+Run locally (frontend)
+
+1. cd into the frontend repo and install dependencies:
+   ```bash
+   npm install
+   ```
+2. Create a `.env` or `.env.local` with at least `VITE_API_URL` pointing to your backend. Example:
+   ```env
+   VITE_API_URL=http://localhost:4000
+   VITE_SHORT_URL_BASE=http://localhost:4000
+   ```
+3. Start dev server:
+   ```bash
+   npm run dev
+   ```
+
+## Notes
+
+- The frontend reads API responses and uses the backend-provided `shortUrl` when available, so the most reliable way to make shareable short links is to set the backend `SHORT_URL_BASE` environment variable to your deployed backend host.
+- If you want, I can add a short section to the frontend README that documents the env vars and how to run the frontend; I can also add a CI job that runs the lightweight `check-spec.js` against a deployed backend URL.
